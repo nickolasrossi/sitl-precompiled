@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# EC2 user-data script that installs SITL on a new instance.
+# It does a few things:
+# - installs python 2.7, which SITL requires
+# - installs SITL python dependencies
+# - installs the hand-rolled SITL package
+# - adds start commands to rc.local
+
+# NOTE: For some undiagnosed reason, the SITL process fails with "Address already in use"
+# when started from cloud-init, but starts fine from rc.local. Therefore, you must reboot
+# your EC2 instance after launching it to get the SITL process started.
+
+
+# install python 2.7 and change default python symlink
+yum install python27-devel -y
+rm /usr/bin/python
+ln -s /usr/bin/python2.7 /usr/bin/python
+
+# yum still needs 2.6, so write it in and backup script
+cp /usr/bin/yum /usr/bin/_yum_before_27
+sed -i s/python/python2.6/g /usr/bin/yum
+sed -i s/python2.6/python2.6/g /usr/bin/yum
+
+# now install pip for 2.7
+wget --no-check-certificate http://pypi.python.org/packages/source/d/distribute/distribute-0.6.35.tar.gz
+tar xf distribute-0.6.35.tar.gz
+cd distribute-0.6.35
+python2.7 setup.py install
+
+easy_install-2.7 pip
+
+/usr/bin/python27 /tmp/ez_setup.py
+/usr/bin/easy_install-2.7 pip
+pip install virtualenv
+
+
+# install SITL dependency
+pip install pymavlink
+
+
+# install SITL
+cd /home/ec2-user
+wget https://raw.githubusercontent.com/nickolasrossi/scavlink/develop/tools/sitl/sitl-20150123.tgz
+tar xvfz sitl-20150123.tgz
+chown -R ec2-user sitl
+chgrp -R ec2-user sitl
+
+
+# add start command
+echo 'cd /home/ec2-user/sitl/ArduCopter' >> /etc/rc.d/rc.local
+echo '../Tools/autotest/sim_only.sh -R0.0003 >/var/log/sitl.log 2>&1 &' >> /etc/rc.d/rc.local
+
+
+# start SITL process (not currently starting properly from cloud-init)
+#cd /home/ec2-user/sitl/ArduCopter
+#../Tools/autotest/sim_only.sh -R0.0003 >/var/log/sitl.log 2>&1 &
